@@ -1,0 +1,210 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Reverse Mortgage Calculator (INR)</title>
+      <style>
+        body { font-family: Arial, sans-serif; background: #f8f9fa; margin: 0; padding: 0; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
+        .container { background: #fff; margin-top: 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 650px; }
+        h2 { text-align: center; color: #333; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 6px; }
+        .btn { margin-top: 15px; padding: 10px; width: 100%; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
+        .btn:hover { background: #0056b3; }
+        .muted-btn { background: #6c757d; margin-top: 10px; }
+        #result { margin-top: 20px; padding: 12px; background: #e9f7ef; border-left: 5px solid #28a745; font-weight: bold; }
+        .words { font-size: 13px; color: #444; margin-top: 3px; }
+        table { margin-top: 15px; border-collapse: collapse; width: 100%; font-size: 13px; }
+        th, td { border: 1px solid #ccc; padding: 6px; text-align: right; }
+        th { background: #f1f1f1; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>💰 Reverse Mortgage Calculator (₹)</h2>
+    
+        <label for="annualRate">Annual Interest Rate (%)</label>
+        <input type="number" id="annualRate" placeholder="e.g., 6">
+    
+        <label for="monthlyIncome">Monthly Income (PMT)</label>
+        <input type="number" id="monthlyIncome" placeholder="e.g., 10000">
+    
+        <label for="tenureYears">Tenure (Years)</label>
+        <input type="number" id="tenureYears" placeholder="e.g., 10">
+    
+        <label for="timing">Payment Timing</label>
+        <select id="timing">
+          <option value="end">End of Month (Ordinary Annuity)</option>
+          <option value="begin">Beginning of Month (Annuity Due)</option>
+        </select>
+    
+        <button class="btn" id="calculateBtn">Calculate Future Value</button>
+        <button class="muted-btn btn" id="downloadBtn">⬇️ Download Schedule (CSV)</button>
+    
+        <div id="result"></div>
+    
+        <h3>📊 First 12 Months Schedule Preview</h3>
+        <table id="previewTable">
+          <thead>
+            <tr><th>Month</th><th>Payment</th><th>Interest</th><th>Balance</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    
+    <script>
+    // Format in INR with separators
+    function formatINR(value) {
+      return value.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+    }
+    
+    // Convert number to words (Indian numbering system)
+    function numberToWordsINR(num) {
+      if (isNaN(num)) return '';
+      let [rupees, paise] = num.toFixed(2).split(".");
+      rupees = parseInt(rupees, 10);
+      paise = parseInt(paise, 10);
+    
+      const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
+                 'Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen',
+                 'Eighteen','Nineteen'];
+      const b = ['', '', 'Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+    
+      function inWords(n) {
+        if (n < 20) return a[n];
+        if (n < 100) return b[Math.floor(n/10)] + (n%10 ? " " + a[n%10] : "");
+        if (n < 1000) return a[Math.floor(n/100)] + " Hundred" + (n%100 ? " " + inWords(n%100) : "");
+        return "";
+      }
+    
+      function numToIndianWords(n) {
+        if (n === 0) return "Zero";
+        let str = "";
+        const crore = Math.floor(n / 10000000);
+        const lakh = Math.floor((n % 10000000) / 100000);
+        const thousand = Math.floor((n % 100000) / 1000);
+        const hundred = Math.floor((n % 1000) / 100);
+        const rest = n % 100;
+    
+        if (crore) str += inWords(crore) + " Crore ";
+        if (lakh) str += inWords(lakh) + " Lakh ";
+        if (thousand) str += inWords(thousand) + " Thousand ";
+        if (hundred) str += inWords(hundred) + " Hundred ";
+        if (rest) str += inWords(rest);
+        return str.trim();
+      }
+    
+      let words = "";
+      if (rupees > 0) words += numToIndianWords(rupees) + " Rupees";
+      if (paise > 0) words += " and " + numToIndianWords(paise) + " Paise";
+      if (words) words += " Only";
+      return words;
+    }
+    
+    function calculateFV(P, annualRate, years, timing='end') {
+      const n = Math.round(years * 12);
+      const r = annualRate / 100 / 12;
+      if (r === 0) return {fv: P*n, totalInterest: 0, totalPayments: P*n};
+    
+      let fv;
+      if (timing === 'end') {
+        fv = P * ((Math.pow(1 + r, n) - 1) / r);
+      } else {
+        fv = P * ((Math.pow(1 + r, n) - 1) / r) * (1 + r);
+      }
+      const totalPayments = P * n;
+      const totalInterest = fv - totalPayments;
+      return {fv, totalPayments, totalInterest};
+    }
+    
+    function generateSchedule(payment, annualRate, years, timing='end') {
+      const n = Math.round(years * 12);
+      const r = annualRate / 100 / 12;
+      let balance = 0;
+      let schedule = [["Month","Payment","Interest","Balance"]];
+    
+      for(let month=1; month<=n; month++) {
+        let interest = balance * r;
+        if (timing === 'begin') {
+          balance += payment;
+          interest = balance * r;
+          balance += interest;
+        } else {
+          balance += interest + payment;
+        }
+        schedule.push([month, formatINR(payment), formatINR(interest), formatINR(balance)]);
+      }
+    
+      const totalPayments = payment * n;
+      const fv = balance;
+      const totalInterest = fv - totalPayments;
+      schedule.push(["TOTALS", formatINR(totalPayments), formatINR(totalInterest), formatINR(fv)]);
+    
+      return schedule;
+    }
+    
+    function downloadCSV(schedule) {
+      let csvContent = schedule.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", "annuity_schedule.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
+    // Handle Calculate
+    document.getElementById('calculateBtn').addEventListener('click', () => {
+      const P = parseFloat(document.getElementById('monthlyIncome').value);
+      const annual = parseFloat(document.getElementById('annualRate').value);
+      const years = parseFloat(document.getElementById('tenureYears').value);
+      const timing = document.getElementById('timing').value;
+    
+      if (isNaN(P) || isNaN(annual) || isNaN(years) || P<=0 || years<=0) {
+        alert("Please enter valid positive numbers.");
+        return;
+      }
+    
+      const {fv, totalPayments, totalInterest} = calculateFV(P, annual, years, timing);
+      document.getElementById('result').innerHTML = `
+        <div>Future Value after ${years} years = <strong>${formatINR(fv)}</strong></div>
+        <div class="words">${numberToWordsINR(fv)}</div>
+        <div>Total Payments Received = <strong>${formatINR(totalPayments)}</strong></div>
+        <div class="words">${numberToWordsINR(totalPayments)}</div>
+        <div>Total Interest Earned = <strong>${formatINR(totalInterest)}</strong></div>
+        <div class="words">${numberToWordsINR(totalInterest)}</div>
+      `;
+    
+      const schedule = generateSchedule(P, annual, years, timing);
+      const previewBody = document.querySelector("#previewTable tbody");
+      previewBody.innerHTML = "";
+      schedule.slice(1,13).forEach(row => {
+        const tr = document.createElement("tr");
+        row.forEach(cell => {
+          const td = document.createElement("td");
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        previewBody.appendChild(tr);
+      });
+    });
+    
+    // Handle Download
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      const P = parseFloat(document.getElementById('monthlyIncome').value);
+      const annual = parseFloat(document.getElementById('annualRate').value);
+      const years = parseFloat(document.getElementById('tenureYears').value);
+      const timing = document.getElementById('timing').value;
+    
+      if (isNaN(P) || isNaN(annual) || isNaN(years) || P<=0 || years<=0) {
+        alert("Please enter valid positive numbers before downloading.");
+        return;
+      }
+      const schedule = generateSchedule(P, annual, years, timing);
+      downloadCSV(schedule);
+    });
+    </script>
+    </body>
+    </html>
